@@ -3,7 +3,7 @@
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List, Dict, Any
 
 import aiohttp
 from astrbot.api.event import filter, AstrMessageEvent
@@ -14,8 +14,8 @@ from astrbot.api import logger
 @register(
     "astrbot_plugin_dcs_monitor",
     "YourName",
-    "DCS 数据监控与预警插件",
-    "1.0.0",
+    "DCS 多点位数据监控与预警插件",
+    "2.0.0",
     "https://github.com/yourname/astrbot_plugin_dcs_monitor",
 )
 class DCSMonitor(Star):
@@ -31,20 +31,36 @@ class DCSMonitor(Star):
         self.username = raw_config.get("username", "")
         self.password = raw_config.get("password", "")
         self.client_id = raw_config.get("client_id", "ms-content-sample")
-        self.point_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
-        self.point_name = raw_config.get("point_name", "HCY_FICOMP_710B101_PV")
-        self.check_interval = raw_config.get("check_interval", 10)
-        self.low_threshold = raw_config.get("low_threshold")   # 可能为 None
-        self.high_threshold = raw_config.get("high_threshold") # 可能为 None
+        self.global_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
+        self.default_check_interval = raw_config.get("default_check_interval", 10)
 
-        self.point_id = self.point_prefix + self.point_name
+        # 解析点位列表
+        self.points: List[Dict[str, Any]] = []
+        points_config = raw_config.get("points", [])
+        for pt in points_config:
+            if not pt.get("enabled", True):
+                continue
+            point_id = pt.get("point_id")
+            if not point_id:
+                point_id = self.global_prefix + pt.get("name", "")
+            point_info = {
+                "name": pt["name"],
+                "point_id": point_id,
+                "low_threshold": pt.get("low_threshold"),
+                "high_threshold": pt.get("high_threshold"),
+                "check_interval": pt.get("check_interval", self.default_check_interval),
+                "last_alert_state": "normal"  # normal, low, high
+            }
+            self.points.append(point_info)
+
+        if not self.points:
+            logger.warning("未配置任何启用的监控点位，插件将不会进行监控。")
 
         # 运行时状态
         self.ticket: Optional[str] = None
         self.monitor_task: Optional[asyncio.Task] = None
         self.running = False
         self.alert_targets: set = set()
-        self.last_alert_state = "normal"   # normal, low, high
 
     async def terminate(self):
         """插件卸载时停止监控任务"""
@@ -95,7 +111,7 @@ class DCSMonitor(Star):
         utc_dt = datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         return utc_dt.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def fetch_latest(self, ticket: str) -> Union[Tuple[str, float], str, None]:
+    async def fetch_latest(self, ticket: str, point_id: str) -> Union[Tuple[str, float], str, None]:
         """
         返回：
             (北京时间, 数值)  正常数据
@@ -109,7 +125,7 @@ class DCSMonitor(Star):
 
         payload = {
             "list": [{
-                "dataSource": self.point_id,
+                "dataSource": point_id,
                 "filters": {
                     "minDate": min_date,
                     "maxDate": max_date,
@@ -140,19 +156,19 @@ class DCSMonitor(Star):
                         return "TOKEN_EXPIRED"
                     if resp.status == 400:
                         text = await resp.text()
-                        logger.error(f"请求格式错误(400): {text[:500]}")
+                        logger.error(f"请求格式错误(400) 点位 {point_id}: {text[:500]}")
                         return "BAD_REQUEST"
                     resp.raise_for_status()
                     data = await resp.json()
-                    point_data = data.get(self.point_id)
+                    point_data = data.get(point_id)
                     if point_data and point_data.get("list"):
                         last = point_data["list"][-1]
                         return (self._utc_to_beijing(last["time"]), last["first"])
                     else:
-                        logger.warning(f"响应中无数据: {data}")
+                        logger.warning(f"点位 {point_id} 响应中无数据: {data}")
                         return None
         except Exception as e:
-            logger.error(f"请求异常: {e}")
+            logger.error(f"请求异常 点位 {point_id}: {e}")
             return None
 
     async def send_alert(self, message: str):
@@ -166,28 +182,33 @@ class DCSMonitor(Star):
             except Exception as e:
                 logger.error(f"向 {session_id} 发送预警失败: {e}")
 
-    async def check_and_alert(self, value: float):
-        """根据阈值判断并发送预警"""
+    async def check_and_alert_for_point(self, point: Dict, value: float):
+        """根据点位阈值判断并发送预警"""
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.low_threshold is not None and value < self.low_threshold:
-            if self.last_alert_state != "low":
-                msg = f"⚠️ DCS 低阈值预警 [{now_str}]\n点位: {self.point_name}\n当前值: {value}\n低于阈值: {self.low_threshold}"
+        low = point.get("low_threshold")
+        high = point.get("high_threshold")
+        name = point["name"]
+        state = point["last_alert_state"]
+
+        if low is not None and value < low:
+            if state != "low":
+                msg = f"⚠️ DCS 低阈值预警 [{now_str}]\n点位: {name}\n当前值: {value}\n低于阈值: {low}"
                 await self.send_alert(msg)
-                self.last_alert_state = "low"
-        elif self.high_threshold is not None and value > self.high_threshold:
-            if self.last_alert_state != "high":
-                msg = f"⚠️ DCS 高阈值预警 [{now_str}]\n点位: {self.point_name}\n当前值: {value}\n高于阈值: {self.high_threshold}"
+                point["last_alert_state"] = "low"
+        elif high is not None and value > high:
+            if state != "high":
+                msg = f"⚠️ DCS 高阈值预警 [{now_str}]\n点位: {name}\n当前值: {value}\n高于阈值: {high}"
                 await self.send_alert(msg)
-                self.last_alert_state = "high"
+                point["last_alert_state"] = "high"
         else:
-            if self.last_alert_state != "normal" and (self.low_threshold is not None or self.high_threshold is not None):
-                msg = f"✅ DCS 状态恢复正常 [{now_str}]\n点位: {self.point_name}\n当前值: {value}"
+            if state != "normal" and (low is not None or high is not None):
+                msg = f"✅ DCS 状态恢复正常 [{now_str}]\n点位: {name}\n当前值: {value}"
                 await self.send_alert(msg)
-                self.last_alert_state = "normal"
+                point["last_alert_state"] = "normal"
 
     async def monitoring_loop(self):
-        """监控主循环"""
-        logger.info("DCS 监控循环启动")
+        """多点位监控主循环"""
+        logger.info("DCS 多点位监控循环启动")
         while self.running:
             if not self.ticket:
                 logger.info("尝试登录获取 ticket...")
@@ -197,28 +218,38 @@ class DCSMonitor(Star):
                     await asyncio.sleep(10)
                     continue
 
-            result = await self.fetch_latest(self.ticket)
-            if result == "TOKEN_EXPIRED":
-                logger.warning("Ticket 已失效，重新登录")
-                self.ticket = None
-                continue
-            elif result == "BAD_REQUEST":
-                logger.error("请求格式错误（可能点ID无效），停止监控")
-                self.running = False
-                break
-            elif result is None:
-                logger.warning("获取数据失败，稍后重试")
-                await asyncio.sleep(self.check_interval)
-                continue
+            # 计算本次循环需要等待的最短间隔
+            min_interval = 10
+            token_expired = False
 
-            bj_time, value = result
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[{current_time}] {self.point_name}: {value} @ {bj_time}")
+            for point in self.points:
+                result = await self.fetch_latest(self.ticket, point["point_id"])
+                if result == "TOKEN_EXPIRED":
+                    logger.warning("Ticket 已失效，重新登录")
+                    self.ticket = None
+                    token_expired = True
+                    break
+                elif result == "BAD_REQUEST":
+                    logger.error(f"点位 {point['name']} 请求格式错误，跳过本次")
+                    continue
+                elif result is None:
+                    logger.warning(f"点位 {point['name']} 获取数据失败")
+                    continue
+                else:
+                    bj_time, value = result
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"[{current_time}] {point['name']}: {value} @ {bj_time}")
+                    await self.check_and_alert_for_point(point, value)
 
-            # 预警判断
-            await self.check_and_alert(value)
+                # 更新最小间隔
+                interval = point.get("check_interval", self.default_check_interval)
+                if interval < min_interval:
+                    min_interval = interval
 
-            await asyncio.sleep(self.check_interval)
+            if token_expired:
+                continue  # 重新登录后继续循环
+
+            await asyncio.sleep(min_interval)
 
     # ------------------- 指令 -------------------
     @filter.command("dcs_start")
@@ -227,9 +258,12 @@ class DCSMonitor(Star):
         if self.running:
             yield event.plain_result("DCS 监控已经在运行中")
             return
+        if not self.points:
+            yield event.plain_result("⚠️ 未配置任何监控点位，请先在插件配置中添加 points 列表。")
+            return
         self.running = True
         self.monitor_task = asyncio.create_task(self.monitoring_loop())
-        yield event.plain_result("✅ DCS 监控已启动")
+        yield event.plain_result(f"✅ DCS 多点位监控已启动，共监控 {len(self.points)} 个点位")
 
     @filter.command("dcs_stop")
     async def stop_monitor(self, event: AstrMessageEvent):
@@ -251,12 +285,19 @@ class DCSMonitor(Star):
     async def status(self, event: AstrMessageEvent):
         """查看监控状态"""
         status_text = "运行中" if self.running else "已停止"
-        msg = f"DCS 监控状态: {status_text}\n监控点位: {self.point_name}\n检查间隔: {self.check_interval}秒"
-        if self.low_threshold is not None:
-            msg += f"\n低阈值: {self.low_threshold}"
-        if self.high_threshold is not None:
-            msg += f"\n高阈值: {self.high_threshold}"
-        msg += f"\n当前预警会话数: {len(self.alert_targets)}"
+        msg = f"DCS 监控状态: {status_text}\n"
+        if not self.points:
+            msg += "未配置任何监控点位。"
+        else:
+            msg += f"监控点位数量: {len(self.points)}\n"
+            for pt in self.points:
+                msg += f"\n📊 {pt['name']}\n  - 点ID: {pt['point_id']}\n  - 间隔: {pt['check_interval']}秒"
+                if pt.get('low_threshold') is not None:
+                    msg += f"\n  - 低阈值: {pt['low_threshold']}"
+                if pt.get('high_threshold') is not None:
+                    msg += f"\n  - 高阈值: {pt['high_threshold']}"
+                msg += f"\n  - 状态: {pt.get('last_alert_state', 'normal')}"
+        msg += f"\n\n当前预警会话数: {len(self.alert_targets)}"
         yield event.plain_result(msg)
 
     @filter.command("dcs_bind")
@@ -278,17 +319,27 @@ class DCSMonitor(Star):
 
     @filter.command("dcs_now")
     async def query_now(self, event: AstrMessageEvent):
-        """立即查询一次当前值（需要 ticket 有效）"""
+        """立即查询所有点位当前值"""
         if not self.ticket:
             yield event.plain_result("尚未登录，请先使用 /dcs_start 启动监控")
             return
-        result = await self.fetch_latest(self.ticket)
-        if result == "TOKEN_EXPIRED":
-            yield event.plain_result("登录已过期，请重新启动监控")
-        elif result == "BAD_REQUEST":
-            yield event.plain_result("请求格式错误，请检查点ID配置")
-        elif result is None:
-            yield event.plain_result("获取数据失败")
-        else:
-            bj_time, value = result
-            yield event.plain_result(f"点位 {self.point_name} 最新值: {value}\n时间: {bj_time}")
+        if not self.points:
+            yield event.plain_result("未配置任何监控点位")
+            return
+
+        results = []
+        for point in self.points:
+            result = await self.fetch_latest(self.ticket, point["point_id"])
+            if result == "TOKEN_EXPIRED":
+                yield event.plain_result("登录已过期，请重新启动监控")
+                return
+            elif result == "BAD_REQUEST":
+                results.append(f"❌ {point['name']}: 请求格式错误")
+            elif result is None:
+                results.append(f"❌ {point['name']}: 获取数据失败")
+            else:
+                bj_time, value = result
+                results.append(f"✅ {point['name']}: {value} @ {bj_time}")
+
+        msg = "📊 当前点位值:\n" + "\n".join(results)
+        yield event.plain_result(msg)
