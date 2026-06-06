@@ -2,16 +2,15 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union
 
 import aiohttp
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
+from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 
-# ---------- 插件注册 ----------
+
 @register(
     "astrbot_plugin_dcs_monitor",
     "YourName",
@@ -22,29 +21,31 @@ from astrbot.api import logger
 class DCSMonitor(Star):
     def __init__(self, context: Context):
         super().__init__(context)
-        # 读取配置（来自 _conf_schema.json）
-        self.config = context.get_config()
-        self.api_base = self.config.get("api_base", "http://119.36.147.45:8041")
-        self.username = self.config["username"]
-        self.password = self.config["password"]
-        self.client_id = self.config.get("client_id", "ms-content-sample")
-        self.point_prefix = self.config.get("point_prefix", "system:LinkObject:serverdata1:system:")
-        self.point_name = self.config["point_name"]
+        # 安全获取配置
+        raw_config = self.context.get_config()
+        if not isinstance(raw_config, dict):
+            logger.error(f"配置格式错误，预期 dict，实际为 {type(raw_config)}，内容: {raw_config}")
+            raw_config = {}
+
+        self.api_base = raw_config.get("api_base", "http://119.36.147.45:8041")
+        self.username = raw_config.get("username", "")
+        self.password = raw_config.get("password", "")
+        self.client_id = raw_config.get("client_id", "ms-content-sample")
+        self.point_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
+        self.point_name = raw_config.get("point_name", "HCY_FICOMP_710B101_PV")
+        self.check_interval = raw_config.get("check_interval", 10)
+        self.low_threshold = raw_config.get("low_threshold")   # 可能为 None
+        self.high_threshold = raw_config.get("high_threshold") # 可能为 None
+
         self.point_id = self.point_prefix + self.point_name
-        self.check_interval = self.config.get("check_interval", 10)     # 秒
-        self.low_threshold = self.config.get("low_threshold", None)     # 低阈值
-        self.high_threshold = self.config.get("high_threshold", None)   # 高阈值
 
         # 运行时状态
         self.ticket: Optional[str] = None
         self.monitor_task: Optional[asyncio.Task] = None
         self.running = False
-        self.alert_targets: set = set()          # 存储需要接收预警的会话ID
-
-        # 辅助变量（避免重复报警）
+        self.alert_targets: set = set()
         self.last_alert_state = "normal"   # normal, low, high
 
-    # ---------- 生命周期 ----------
     async def terminate(self):
         """插件卸载时停止监控任务"""
         if self.monitor_task:
@@ -56,7 +57,7 @@ class DCSMonitor(Star):
                 pass
         logger.info("DCS监控插件已停止")
 
-    # ---------- API 交互（异步）----------
+    # ------------------- API 交互 -------------------
     async def login(self) -> Optional[str]:
         """登录并获取 ticket"""
         login_url = f"{self.api_base}/inter-api/auth/login"
@@ -161,7 +162,6 @@ class DCSMonitor(Star):
             return
         for session_id in self.alert_targets:
             try:
-                # 使用 AstrBot 的通用消息发送接口
                 await self.context.send_message(session_id, message)
             except Exception as e:
                 logger.error(f"向 {session_id} 发送预警失败: {e}")
@@ -180,7 +180,7 @@ class DCSMonitor(Star):
                 await self.send_alert(msg)
                 self.last_alert_state = "high"
         else:
-            if self.last_alert_state != "normal":
+            if self.last_alert_state != "normal" and (self.low_threshold is not None or self.high_threshold is not None):
                 msg = f"✅ DCS 状态恢复正常 [{now_str}]\n点位: {self.point_name}\n当前值: {value}"
                 await self.send_alert(msg)
                 self.last_alert_state = "normal"
@@ -220,7 +220,7 @@ class DCSMonitor(Star):
 
             await asyncio.sleep(self.check_interval)
 
-    # ---------- 指令定义 ----------
+    # ------------------- 指令 -------------------
     @filter.command("dcs_start")
     async def start_monitor(self, event: AstrMessageEvent):
         """启动 DCS 监控"""
@@ -272,7 +272,7 @@ class DCSMonitor(Star):
         session_id = event.get_session_id()
         if session_id in self.alert_targets:
             self.alert_targets.remove(session_id)
-            yield event.plain_result(f"❌ 已解除当前会话的预警绑定")
+            yield event.plain_result("❌ 已解除当前会话的预警绑定")
         else:
             yield event.plain_result("当前会话并未绑定预警")
 
