@@ -1,50 +1,55 @@
 {
-  "type": "object",
-  "properties": {
     "api_base": {
-      "type": "string",
-      "title": "DCS API 基础地址",
-      "default": "http://119.36.147.45:8041"
+        "type": "string",
+        "title": "DCS API 基础地址",
+        "default": "http://119.36.147.45:8041",
+        "description": "DCS 服务器的 API 基础地址。"
     },
     "username": {
-      "type": "string",
-      "title": "登录用户名",
-      "default": "J21137"
+        "type": "string",
+        "title": "登录用户名",
+        "default": "J21137",
+        "description": "用于登录 DCS 系统的用户名。"
     },
     "password": {
-      "type": "string",
-      "title": "登录密码",
-      "default": "Cxfpass@123",
-      "format": "password"
+        "type": "string",
+        "title": "登录密码",
+        "default": "Cxfpass@123",
+        "format": "password",
+        "description": "用于登录 DCS 系统的密码。"
     },
     "client_id": {
-      "type": "string",
-      "title": "客户端ID",
-      "default": "ms-content-sample"
+        "type": "string",
+        "title": "客户端ID",
+        "default": "ms-content-sample",
+        "description": "API 登录所需的客户端 ID。"
     },
     "point_prefix": {
-      "type": "string",
-      "title": "点ID前缀",
-      "default": "system:LinkObject:serverdata1:system:"
+        "type": "string",
+        "title": "点ID前缀",
+        "default": "system:LinkObject:serverdata1:system:",
+        "description": "监控点的前缀。"
     },
     "point_name": {
-      "type": "string",
-      "title": "监控点名称",
-      "default": "HCY_FICOMP_710B101_PV"
+        "type": "string",
+        "title": "监控点名称",
+        "default": "HCY_FICOMP_710B101_PV",
+        "description": "要监控的具体点位名称，例如 HCY_FICOMP_709A101_PV。"
     },
     "check_interval": {
-      "type": "integer",
-      "title": "检查间隔(秒)",
-      "default": 10
+        "type": "integer",
+        "title": "检查间隔(秒)",
+        "default": 10,
+        "description": "查询 DCS 数据的时间间隔，单位为秒，建议不要设得太短。"
     },
     "low_threshold": {
-      "type": "number",
-      "title": "低阈值（可选）"
+        "type": "number",
+        "title": "低阈值（可选）",
+        "description": "低阈值。如果当前值低于此值，将触发预警。不填写则不启用。"
     },
     "high_threshold": {
-      "type": "number",
-      "title": "高阈值（可选）"
+        "type": "number",
+        "title": "高阈值（可选）",
+        "description": "高阈值。如果当前值高于此值，将触发预警。不填写则不启用。"
     }
-  },
-  "required": ["username", "password", "point_name"]
 }
