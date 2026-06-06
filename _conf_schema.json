@@ -22,47 +22,50 @@
     },
     "point_prefix": {
         "type": "string",
-        "title": "点ID前缀（全局）",
+        "title": "点ID前缀",
         "default": "system:LinkObject:serverdata1:system:",
-        "description": "如果某个点位未提供完整点ID，则使用此前缀+点位名称拼接。"
+        "description": "自动拼接到每个点位名称前面的固定前缀。"
     },
     "default_check_interval": {
         "type": "int",
-        "title": "默认检查间隔(秒)",
+        "title": "全局默认检查间隔(秒)",
         "default": 10
     },
     "points": {
         "type": "list",
         "title": "监控点位列表",
-        "description": "配置需要监控的点位，每个点位可单独设置阈值和间隔。",
+        "description": "只需要填写点位名称（例如 HCY_709B101_PV），上下限为可选，留空则不预警。",
         "items": {
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
-                    "title": "点位名称（显示用）"
+                    "title": "点位名称",
+                    "description": "例如 HCY_709B101_PV 或 HCY_FICOMP_710B101_PV"
                 },
-                "point_id": {
+                "description": {
                     "type": "string",
-                    "title": "完整点ID",
-                    "description": "如不填，则使用全局前缀+名称字段"
+                    "title": "点位描述（可选）",
+                    "description": "用于预警消息中显示，便于识别，不填则使用名称。"
                 },
                 "low_threshold": {
-                    "type": "float",
-                    "title": "低阈值（可选）"
+                    "type": "number",
+                    "title": "低阈值（可选）",
+                    "description": "低于此值触发预警。"
                 },
                 "high_threshold": {
-                    "type": "float",
-                    "title": "高阈值（可选）"
+                    "type": "number",
+                    "title": "高阈值（可选）",
+                    "description": "高于此值触发预警。"
                 },
                 "check_interval": {
                     "type": "int",
                     "title": "检查间隔(秒)",
-                    "description": "覆盖全局默认间隔"
+                    "description": "覆盖全局默认间隔，不填则使用全局默认值。"
                 },
                 "enabled": {
-                    "type": "bool",
-                    "title": "是否启用",
+                    "type": "boolean",
+                    "title": "启用此点位",
                     "default": true
                 }
             },
