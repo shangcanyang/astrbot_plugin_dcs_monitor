@@ -4,8 +4,7 @@
     "api_base": {
       "type": "string",
       "title": "DCS API 基础地址",
-      "default": "http://119.36.147.45:8041",
-      "description": "例如 http://your-dcs-server:8041"
+      "default": "http://119.36.147.45:8041"
     },
     "username": {
       "type": "string",
@@ -31,27 +30,20 @@
     "point_name": {
       "type": "string",
       "title": "监控点名称",
-      "default": "HCY_FICOMP_710B101_PV",
-      "description": "例如 HCY_FICOMP_709A101_PV"
+      "default": "HCY_FICOMP_710B101_PV"
     },
     "check_interval": {
       "type": "integer",
       "title": "检查间隔(秒)",
-      "default": 10,
-      "minimum": 2,
-      "maximum": 300
+      "default": 10
     },
     "low_threshold": {
       "type": "number",
-      "title": "低阈值（可选）",
-      "default": null,
-      "description": "低于此值触发预警，不填则不启用"
+      "title": "低阈值（可选）"
     },
     "high_threshold": {
       "type": "number",
-      "title": "高阈值（可选）",
-      "default": null,
-      "description": "高于此值触发预警，不填则不启用"
+      "title": "高阈值（可选）"
     }
   },
   "required": ["username", "password", "point_name"]
