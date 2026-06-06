@@ -14,14 +14,19 @@ from astrbot.api import logger
 @register(
     "astrbot_plugin_dcs_monitor",
     "YourName",
-    "DCS 多点位监控（自动拼接点ID）",
-    "2.1.0",
+    "DCS 多点位监控（简单模式：位号+描述+上下限）",
+    "2.2.0",
     "https://github.com/yourname/astrbot_plugin_dcs_monitor",
 )
 class DCSMonitor(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
-        raw_config = self.context.get_config()
+        # config 是 AstrBot 插件管理器传入的插件专属配置 (AstrBotConfig 对象)
+        if config is None:
+            logger.warning("插件配置为空，尝试通过 context.get_config() 获取")
+            raw_config = self.context.get_config()
+        else:
+            raw_config = config
         if not isinstance(raw_config, dict):
             logger.error(f"配置格式错误，预期 dict，实际为 {type(raw_config)}")
             raw_config = {}
@@ -33,22 +38,54 @@ class DCSMonitor(Star):
         self.global_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
         self.default_check_interval = raw_config.get("default_check_interval", 10)
 
-        # 解析点位列表
+        # 解析点位列表 —— 支持简单格式和对象格式
         self.points: List[Dict[str, Any]] = []
         points_config = raw_config.get("points", [])
         for pt in points_config:
-            if not pt.get("enabled", True):
+            if isinstance(pt, str):
+                # 简单 CSV 格式: "位号,描述,下限,上限"
+                parts = [p.strip() for p in pt.split(",")]
+                if len(parts) < 1:
+                    logger.warning(f"忽略无效点位配置: {pt!r}")
+                    continue
+                name = parts[0]
+                desc = parts[1] if len(parts) >= 2 else name
+                low = float(parts[2]) if len(parts) >= 3 and parts[2] else None
+                high = float(parts[3]) if len(parts) >= 4 and parts[3] else None
+                pt_obj = {
+                    "name": name,
+                    "description": desc,
+                    "low_threshold": low,
+                    "high_threshold": high,
+                }
+            elif isinstance(pt, dict):
+                # 对象格式
+                if not pt.get("name"):
+                    logger.warning(f"忽略缺少 name 的点位: {pt}")
+                    continue
+                if not pt.get("enabled", True):
+                    continue
+                pt_obj = {
+                    "name": pt["name"],
+                    "description": pt.get("description", pt["name"]),
+                    "low_threshold": pt.get("low_threshold"),
+                    "high_threshold": pt.get("high_threshold"),
+                    "check_interval": pt.get("check_interval", self.default_check_interval),
+                }
+            else:
+                logger.warning(f"忽略无法识别的点位类型: {type(pt)}")
                 continue
-            name = pt["name"]
-            point_id = self.global_prefix + name   # 自动拼接完整ID
+
+            # 统一构建完整 point_info
+            point_id = self.global_prefix + pt_obj["name"]
             point_info = {
-                "name": name,
-                "description": pt.get("description", name),
+                "name": pt_obj["name"],
+                "description": pt_obj.get("description", pt_obj["name"]),
                 "point_id": point_id,
-                "low_threshold": pt.get("low_threshold"),
-                "high_threshold": pt.get("high_threshold"),
-                "check_interval": pt.get("check_interval", self.default_check_interval),
-                "last_alert_state": "normal"
+                "low_threshold": pt_obj.get("low_threshold"),
+                "high_threshold": pt_obj.get("high_threshold"),
+                "check_interval": self.default_check_interval,
+                "last_alert_state": "normal",
             }
             self.points.append(point_info)
 
@@ -153,7 +190,8 @@ class DCSMonitor(Star):
                     point_data = data.get(point_id)
                     if point_data and point_data.get("list"):
                         last = point_data["list"][-1]
-                        return (self._utc_to_beijing(last["time"]), last["first"])
+                        value = float(last["first"])
+                        return (self._utc_to_beijing(last["time"]), value)
                     else:
                         logger.warning(f"点位 {point_id} 响应中无数据: {data}")
                         return None
@@ -314,6 +352,7 @@ class DCSMonitor(Star):
                 results.append(f"❌ {display}: 获取数据失败")
             else:
                 bj_time, value = result
+                # value is already float from fetch_latest
                 results.append(f"✅ {display}: {value} @ {bj_time}")
         msg = "📊 当前点位值:\n" + "\n".join(results)
         yield event.plain_result(msg)
