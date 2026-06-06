@@ -17,7 +17,7 @@
 1. 将本插件克隆到 AstrBot 的插件目录：
    ```bash
    cd AstrBot/data/plugins
-   git clone https://github.com/你的用户名/astrbot_plugin_dcs_monitor.git
+   git clone https://github.com/shangcanyang/astrbot_plugin_dcs_monitor.git
    ```
 
 2. 重启 AstrBot，或在 WebUI 中启用插件。
