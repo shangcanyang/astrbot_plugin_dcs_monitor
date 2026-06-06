@@ -2,54 +2,71 @@
     "api_base": {
         "type": "string",
         "title": "DCS API 基础地址",
-        "default": "http://119.36.147.45:8041",
-        "description": "DCS 服务器的 API 基础地址。"
+        "default": "http://119.36.147.45:8041"
     },
     "username": {
         "type": "string",
         "title": "登录用户名",
-        "default": "J21137",
-        "description": "用于登录 DCS 系统的用户名。"
+        "default": "J21137"
     },
     "password": {
         "type": "string",
         "title": "登录密码",
         "default": "Cxfpass@123",
-        "format": "password",
-        "description": "用于登录 DCS 系统的密码。"
+        "format": "password"
     },
     "client_id": {
         "type": "string",
         "title": "客户端ID",
-        "default": "ms-content-sample",
-        "description": "API 登录所需的客户端 ID。"
+        "default": "ms-content-sample"
     },
     "point_prefix": {
         "type": "string",
-        "title": "点ID前缀",
+        "title": "点ID前缀（全局）",
         "default": "system:LinkObject:serverdata1:system:",
-        "description": "监控点的前缀。"
+        "description": "如果某个点位未提供完整点ID，则使用此前缀+点位名称拼接。"
     },
-    "point_name": {
-        "type": "string",
-        "title": "监控点名称",
-        "default": "HCY_FICOMP_710B101_PV",
-        "description": "要监控的具体点位名称，例如 HCY_FICOMP_709A101_PV。"
-    },
-    "check_interval": {
+    "default_check_interval": {
         "type": "int",
-        "title": "检查间隔(秒)",
-        "default": 10,
-        "description": "查询 DCS 数据的时间间隔，单位为秒，建议不要设得太短。"
+        "title": "默认检查间隔(秒)",
+        "default": 10
     },
-    "low_threshold": {
-        "type": "float",
-        "title": "低阈值（可选）",
-        "description": "低阈值。如果当前值低于此值，将触发预警。不填写则不启用。"
-    },
-    "high_threshold": {
-        "type": "float",
-        "title": "高阈值（可选）",
-        "description": "高阈值。如果当前值高于此值，将触发预警。不填写则不启用。"
+    "points": {
+        "type": "list",
+        "title": "监控点位列表",
+        "description": "配置需要监控的点位，每个点位可单独设置阈值和间隔。",
+        "items": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "title": "点位名称（显示用）"
+                },
+                "point_id": {
+                    "type": "string",
+                    "title": "完整点ID",
+                    "description": "如不填，则使用全局前缀+名称字段"
+                },
+                "low_threshold": {
+                    "type": "float",
+                    "title": "低阈值（可选）"
+                },
+                "high_threshold": {
+                    "type": "float",
+                    "title": "高阈值（可选）"
+                },
+                "check_interval": {
+                    "type": "int",
+                    "title": "检查间隔(秒)",
+                    "description": "覆盖全局默认间隔"
+                },
+                "enabled": {
+                    "type": "bool",
+                    "title": "是否启用",
+                    "default": true
+                }
+            },
+            "required": ["name"]
+        }
     }
 }
