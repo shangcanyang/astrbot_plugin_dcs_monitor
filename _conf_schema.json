@@ -37,18 +37,18 @@
         "description": "要监控的具体点位名称，例如 HCY_FICOMP_709A101_PV。"
     },
     "check_interval": {
-        "type": "integer",
+        "type": "int",
         "title": "检查间隔(秒)",
         "default": 10,
         "description": "查询 DCS 数据的时间间隔，单位为秒，建议不要设得太短。"
     },
     "low_threshold": {
-        "type": "number",
+        "type": "float",
         "title": "低阈值（可选）",
         "description": "低阈值。如果当前值低于此值，将触发预警。不填写则不启用。"
     },
     "high_threshold": {
-        "type": "number",
+        "type": "float",
         "title": "高阈值（可选）",
         "description": "高阈值。如果当前值高于此值，将触发预警。不填写则不启用。"
     }
