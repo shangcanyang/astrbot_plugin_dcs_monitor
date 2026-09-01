@@ -20,6 +20,10 @@ const els = {
   prefix: document.getElementById("prefix-label"),
   monitorStatus: document.getElementById("monitor-status"),
   countLabel: document.getElementById("count-label"),
+  statTotal: document.getElementById("stat-total"),
+  statLow: document.getElementById("stat-low"),
+  statHigh: document.getElementById("stat-high"),
+  statInterval: document.getElementById("stat-interval"),
   toast: document.getElementById("toast"),
 };
 
@@ -46,6 +50,18 @@ function renderStatus() {
   els.monitorStatus.className = `badge ${state.monitorRunning ? "running" : "stopped"}`;
 }
 
+function renderStats(defaultInterval) {
+  const lowCount = state.points.filter((p) => p.last_alert_state === "low").length;
+  const highCount = state.points.filter((p) => p.last_alert_state === "high").length;
+  els.statTotal.textContent = state.points.length;
+  els.statLow.textContent = lowCount;
+  els.statHigh.textContent = highCount;
+  els.statInterval.textContent =
+    defaultInterval === null || defaultInterval === undefined
+      ? "—"
+      : String(defaultInterval);
+}
+
 function renderTable() {
   els.countLabel.textContent = `共 ${state.points.length} 个点位`;
   if (!state.points.length) {
@@ -62,7 +78,7 @@ function renderTable() {
       <td>${formatValue(p.low_threshold)}</td>
       <td>${formatValue(p.high_threshold)}</td>
       <td>${p.check_interval ?? "—"}</td>
-      <td><span class="state-dot ${p.last_alert_state}"></span>${stateLabel(p.last_alert_state)}</td>
+      <td><span class="state-pill ${p.last_alert_state}"><span class="state-dot"></span>${stateLabel(p.last_alert_state)}</span></td>
       <td>
         <button class="link edit" data-name="${escapeAttr(p.name)}">编辑</button>
         <button class="link delete" data-name="${escapeAttr(p.name)}">删除</button>
@@ -94,6 +110,7 @@ async function loadPoints() {
   state.monitorRunning = Boolean(data.running);
   els.prefix.textContent = data.prefix || "";
   renderStatus();
+  renderStats(data.default_interval);
   renderTable();
 }
 
