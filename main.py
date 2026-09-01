@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
+import json
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional, Tuple, Union, List, Dict, Any
 
 import aiohttp
@@ -32,9 +34,11 @@ class DCSMonitor(Star):
             raw_config = {}
 
         self.api_base = raw_config.get("api_base", "http://119.36.147.45:8041")
-        self.username = raw_config.get("username", "")
-        self.password = raw_config.get("password", "")
-        self.client_id = raw_config.get("client_id", "ms-content-sample")
+        # 凭据读取优先级：本地凭据文件(dcs_credentials.json) > WebUI 配置(默认已为空) > 空字符串
+        local_creds = self._load_local_credentials()
+        self.username = raw_config.get("username") or local_creds.get("username", "")
+        self.password = raw_config.get("password") or local_creds.get("password", "")
+        self.client_id = raw_config.get("client_id") or local_creds.get("client_id", "ms-content-sample")
         self.global_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
         self.default_check_interval = raw_config.get("default_check_interval", 10)
 
@@ -97,6 +101,41 @@ class DCSMonitor(Star):
         self.monitor_task: Optional[asyncio.Task] = None
         self.running = False
         self.alert_targets: set = set()
+
+    # ------------------- 本地凭据存储 -------------------
+    @property
+    def credentials_path(self) -> Path:
+        """本地凭据文件路径（与插件同目录，已被 .gitignore 忽略，不入库）"""
+        return Path(__file__).resolve().parent / "dcs_credentials.json"
+
+    def _load_local_credentials(self) -> Dict[str, str]:
+        """读取本地凭据文件，失败或不存在时返回空 dict"""
+        try:
+            if self.credentials_path.exists():
+                data = json.loads(self.credentials_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return {k: str(v) for k, v in data.items()}
+        except Exception as e:
+            logger.error(f"读取本地凭据文件失败: {e}")
+        return {}
+
+    def _save_local_credentials(self, updates: Dict[str, str]) -> bool:
+        """合并更新本地凭据文件，返回是否成功"""
+        try:
+            merged = self._load_local_credentials()
+            for k, v in updates.items():
+                if v is None:
+                    merged.pop(k, None)
+                else:
+                    merged[k] = str(v)
+            self.credentials_path.write_text(
+                json.dumps(merged, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return True
+        except Exception as e:
+            logger.error(f"保存本地凭据失败: {e}")
+            return False
 
     async def terminate(self):
         if self.monitor_task:
@@ -330,6 +369,69 @@ class DCSMonitor(Star):
             yield event.plain_result("❌ 已解除当前会话的预警绑定")
         else:
             yield event.plain_result("当前会话并未绑定预警")
+
+    @filter.command("dcs_set")
+    async def set_credential(self, event: AstrMessageEvent):
+        """设置/查看本地凭据（保存到插件目录下的 dcs_credentials.json）"""
+        # 仅允许管理员操作（若平台 API 不支持管理员判断则放行）
+        try:
+            if not event.is_admin():
+                yield event.plain_result("❌ 仅管理员可设置 DCS 凭据")
+                return
+        except Exception:
+            pass
+
+        raw = event.message_str.strip()
+        # 去掉开头的指令名（兼容 "/dcs_set xxx" 与 "/dcs_set,xxx" 等分隔形式）
+        if " " in raw:
+            rest = raw.split(None, 1)[1].strip()
+        else:
+            rest = ""
+        if not rest:
+            # 无参数：查看当前凭据状态（不回显密码明文）
+            msg = "DCS 凭据状态（本地文件 dcs_credentials.json）:\n"
+            msg += f"username: {'已设置' if self.username else '未设置'}\n"
+            msg += f"client_id: {self.client_id or '未设置(默认 ms-content-sample)'}\n"
+            msg += f"password: {'已设置' if self.password else '未设置'}\n"
+            msg += "\n用法:\n"
+            msg += "/dcs_set username <用户名>\n"
+            msg += "/dcs_set password <密码>\n"
+            msg += "/dcs_set client_id <客户端ID>\n"
+            msg += "/dcs_set remove <username|password|client_id>   # 清除某项\n"
+            msg += "\n提示：凭据仅保存在本机插件目录，不会写入 WebUI 配置或提交到 Git。"
+            yield event.plain_result(msg)
+            return
+
+        sub, _, value = rest.partition(" ")
+        sub = sub.strip().lower()
+        value = value.strip()
+
+        if sub == "remove":
+            key = value.lower().strip()
+            if key not in ("username", "password", "client_id"):
+                yield event.plain_result("❌ 仅支持清除 username / password / client_id")
+                return
+            if not self._save_local_credentials({key: None}):
+                yield event.plain_result("❌ 清除凭据失败，请查看日志")
+                return
+            setattr(self, key, "" if key != "client_id" else "ms-content-sample")
+            yield event.plain_result(f"✅ 已清除本地凭据: {key}")
+            return
+
+        if sub not in ("username", "password", "client_id"):
+            yield event.plain_result("❌ 仅支持设置 username / password / client_id")
+            return
+        if not value:
+            yield event.plain_result(f"❌ 用法: /dcs_set {sub} <值>")
+            return
+        if not self._save_local_credentials({sub: value}):
+            yield event.plain_result("❌ 保存凭据失败，请查看日志")
+            return
+        setattr(self, sub, value)
+        if sub == "password":
+            yield event.plain_result("✅ 已设置 DCS 密码并保存到本地凭据文件")
+        else:
+            yield event.plain_result(f"✅ 已设置 {sub} 并保存到本地凭据文件")
 
     @filter.command("dcs_now")
     async def query_now(self, event: AstrMessageEvent):

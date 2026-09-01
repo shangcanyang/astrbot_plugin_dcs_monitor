@@ -34,8 +34,8 @@
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
 | `api_base` | DCS API 基础地址 | `http://119.36.147.45:8041` |
-| `username` | 登录用户名 | `J21137` |
-| `password` | 登录密码 | `Cxfpass@123` |
+| `username` | 登录用户名（建议留空，用 `/dcs_set` 设置） | 留空 |
+| `password` | 登录密码（建议留空，用 `/dcs_set` 设置） | 留空 |
 | `client_id` | 客户端 ID | `ms-content-sample` |
 | `point_prefix` | 点 ID 前缀 | `system:LinkObject:serverdata1:system:` |
 | `point_name` | 监控点名称 | `HCY_FICOMP_710B101_PV` |
@@ -45,12 +45,27 @@
 
 > 注意：`point_name` 和 `point_prefix` 拼接后必须为 DCS 系统中真实存在的点 ID。
 
+### 🔐 凭据安全说明（v2.2.0+）
+
+`username` / `password` 不再提供明文默认值，避免凭据随仓库/WebUI 泄露。请使用聊天指令将凭据写入**本地凭据文件**（插件目录下 `dcs_credentials.json`，已被 `.gitignore` 忽略，不会提交到 Git）：
+
+```
+/dcs_set username <用户名>          # 设置登录用户名
+/dcs_set password <密码>            # 设置登录密码
+/dcs_set client_id <客户端ID>       # 设置客户端 ID（可选）
+/dcs_set                            # 查看凭据状态（不显示密码明文）
+/dcs_set remove <username|password|client_id>   # 清除某项
+```
+
+凭据读取优先级：本地凭据文件 > WebUI 配置 > 空字符串。已通过 `/dcs_set` 设置后，无需在 WebUI 重复填写。
+
 ## 🤖 使用指令
 
 所有指令通过发送聊天消息触发（需在已绑定预警的会话中发送 `/dcs_bind` 后）。
 
 | 指令 | 说明 |
 |------|------|
+| `/dcs_set` | 设置/查看本地凭据（username / password / client_id），仅管理员可操作 |
 | `/dcs_start` | 启动后台监控任务 |
 | `/dcs_stop`  | 停止监控任务 |
 | `/dcs_status` | 查看监控状态、当前点位及阈值配置 |

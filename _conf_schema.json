@@ -8,15 +8,15 @@
     "username": {
         "type": "string",
         "title": "登录用户名",
-        "default": "J21137",
-        "description": "用于登录 DCS 系统的用户名。"
+        "default": "",
+        "description": "用于登录 DCS 系统的用户名。建议留空，通过聊天指令 /dcs_set username <值> 写入本地凭据文件（dcs_credentials.json），避免明文默认值入库。"
     },
     "password": {
         "type": "string",
         "title": "登录密码",
-        "default": "Cxfpass@123",
+        "default": "",
         "format": "password",
-        "description": "用于登录 DCS 系统的密码。"
+        "description": "用于登录 DCS 系统的密码。建议留空，通过聊天指令 /dcs_set password <值> 写入本地凭据文件（dcs_credentials.json），避免明文默认值入库。"
     },
     "client_id": {
         "type": "string",
