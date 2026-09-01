@@ -1,6 +1,8 @@
 name: astrbot_plugin_dcs_monitor
 display_name: dcs_monitor
 desc: DCS 监控（简单模式）
-version: v2.3.0
+short_desc: 工业 DCS 实时点位监控与阈值预警，支持多会话推送
+version: v2.5.0
 author: canyang
 repo: https://github.com/shangcanyang/astrbot_plugin_dcs_monitor
+astrbot_version: ">=3.0"

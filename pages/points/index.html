@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>位号管理</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>DCS 位号管理</h1>
+      <p class="subtitle">
+        完整点 ID = <code id="prefix-label">…</code> + 位号，须为 DCS 真实点 ID
+      </p>
+      <p class="status-line">
+        <span id="monitor-status" class="badge">—</span>
+        <span id="count-label" class="muted">共 0 个点位</span>
+      </p>
+    </header>
+
+    <section class="card">
+      <h2 id="form-title">添加点位</h2>
+      <form id="point-form" autocomplete="off">
+        <div class="grid">
+          <label>
+            位号（name）<span class="req">*</span>
+            <input
+              id="f-name"
+              type="text"
+              required
+              placeholder="如 HCY_FICOMP_710B101_PV"
+            />
+          </label>
+          <label>
+            描述
+            <input id="f-desc" type="text" placeholder="点位说明，缺省同位号" />
+          </label>
+          <label>
+            低阈值（低于则预警，留空不预警）
+            <input id="f-low" type="number" step="any" placeholder="如 50" />
+          </label>
+          <label>
+            高阈值（高于则预警，留空不预警）
+            <input id="f-high" type="number" step="any" placeholder="如 100" />
+          </label>
+          <label>
+            检查间隔（秒，最小 10）
+            <input id="f-interval" type="number" min="10" step="1" placeholder="默认 10" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="btn-submit" type="submit" class="primary">添加</button>
+          <button id="btn-cancel" type="button" class="ghost hidden">取消编辑</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>点位列表</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>位号</th>
+              <th>描述</th>
+              <th>低阈值</th>
+              <th>高阈值</th>
+              <th>间隔(秒)</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="point-tbody">
+            <tr>
+              <td colspan="7" class="muted center">加载中…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

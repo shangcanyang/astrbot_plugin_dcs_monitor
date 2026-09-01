@@ -1,0 +1,253 @@
+/* DCS 位号管理页样式（适配 AstrBot 亮/暗主题） */
+:root {
+  --bg: #f5f6f8;
+  --card-bg: #ffffff;
+  --text: #1a1a1a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --badge-bg: #eef2ff;
+}
+
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --card-bg: #242424;
+  --text: #e0e0e0;
+  --muted: #9ca3af;
+  --border: #3a3a3a;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --badge-bg: #1e293b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.page-header h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.subtitle {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.subtitle code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--badge-bg);
+  color: var(--primary);
+  word-break: break-all;
+}
+
+.status-line {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--badge-bg);
+  color: var(--muted);
+}
+
+.badge.running {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--ok);
+}
+
+.badge.stopped {
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--warn);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.center {
+  text-align: center;
+}
+
+.card {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.req {
+  color: var(--danger);
+}
+
+input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+button.primary:hover {
+  background: var(--primary-hover);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+button.link {
+  padding: 3px 8px;
+  background: transparent;
+  font-size: 13px;
+}
+
+button.link.edit {
+  color: var(--primary);
+}
+
+button.link.delete {
+  color: var(--danger);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+td.name {
+  font-family: Consolas, "Courier New", monospace;
+  word-break: break-all;
+  white-space: normal;
+}
+
+.state-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.state-dot.normal {
+  background: var(--ok);
+}
+
+.state-dot.low {
+  background: var(--danger);
+}
+
+.state-dot.high {
+  background: var(--danger);
+}
+
+.toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 99;
+}
+
+.toast.success {
+  background: var(--ok);
+}
+
+.toast.error {
+  background: var(--danger);
+}
+
+.hidden {
+  display: none !important;
+}
