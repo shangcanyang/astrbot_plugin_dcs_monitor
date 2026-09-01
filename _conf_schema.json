@@ -1,49 +1,107 @@
 {
-    "api_base": {
-        "type": "string",
-        "title": "DCS API 基础地址",
-        "default": "http://119.36.147.45:8041",
-        "description": "DCS 服务器的 API 基础地址。"
+    "connection": {
+        "type": "object",
+        "description": "连接设置：DCS API 地址与客户端标识",
+        "hint": "配置 DCS 系统 API 的访问地址与客户端标识。",
+        "items": {
+            "api_base": {
+                "type": "string",
+                "description": "DCS 服务器的 API 基础地址",
+                "hint": "例如 http://119.36.147.45:8041，用于登录与点位数据查询。",
+                "default": "http://119.36.147.45:8041"
+            },
+            "client_id": {
+                "type": "string",
+                "description": "API 登录所需的客户端 ID",
+                "hint": "登录接口的 clientId 参数，一般保持默认即可。",
+                "default": "ms-content-sample"
+            }
+        }
     },
-    "username": {
-        "type": "string",
-        "title": "登录用户名",
-        "default": "",
-        "description": "用于登录 DCS 系统的用户名。建议留空，通过聊天指令 /dcs_set username <值> 写入本地凭据文件（dcs_credentials.json），避免明文默认值入库。"
+    "credentials": {
+        "type": "object",
+        "description": "登录凭据：用户名与密码（密码为掩码输入）",
+        "hint": "在插件页面填写并保存后持久化到 AstrBot data/config 目录；更新/重装插件不丢失。",
+        "items": {
+            "username": {
+                "type": "string",
+                "description": "用于登录 DCS 系统的用户名",
+                "hint": "可在网页版直接填写保存，也可使用 /dcs_set username 写入。",
+                "default": ""
+            },
+            "password": {
+                "type": "string",
+                "secret": true,
+                "obvious_hint": true,
+                "description": "用于登录 DCS 系统的密码（掩码显示，不提供默认值）",
+                "hint": "网页版输入后保存；或使用 /dcs_set password 写入。密码以掩码输入框展示。",
+                "default": ""
+            }
+        }
     },
-    "password": {
-        "type": "string",
-        "title": "登录密码",
-        "default": "",
-        "format": "password",
-        "description": "用于登录 DCS 系统的密码。建议留空，通过聊天指令 /dcs_set password <值> 写入本地凭据文件（dcs_credentials.json），避免明文默认值入库。"
-    },
-    "client_id": {
-        "type": "string",
-        "title": "客户端ID",
-        "default": "ms-content-sample",
-        "description": "API 登录所需的客户端 ID。"
-    },
-    "point_prefix": {
-        "type": "string",
-        "title": "点ID前缀",
-        "default": "system:LinkObject:serverdata1:system:",
-        "description": "自动拼接到每个点位名称前面的固定前缀。"
-    },
-    "default_check_interval": {
-        "type": "int",
-        "title": "全局检查间隔(秒)",
-        "default": 10,
-        "description": "所有点位的默认检查间隔，单位为秒。"
+    "monitoring": {
+        "type": "object",
+        "description": "监控设置：点 ID 前缀与全局检查间隔",
+        "hint": "point_prefix 与点位名称拼接后必须为 DCS 系统中真实存在的点 ID。",
+        "items": {
+            "point_prefix": {
+                "type": "string",
+                "description": "自动拼接到每个点位名称前面的固定前缀",
+                "hint": "例如 system:LinkObject:serverdata1:system:",
+                "default": "system:LinkObject:serverdata1:system:"
+            },
+            "default_check_interval": {
+                "type": "int",
+                "description": "所有点位的默认检查间隔，单位为秒",
+                "hint": "单个点位可单独设置检查间隔覆盖此值；轮询间隔不宜低于 10 秒。",
+                "default": 10
+            }
+        }
     },
     "points": {
-        "type": "list",
-        "title": "监控点位列表（简单模式）",
-        "description": "每行一个点位，格式: \"位号,描述,下限,上限\"。下限/上限留空则不预警。例如: HCY_709B101_PV,氨合成B新鲜期流量,0,10000",
-        "items": {
-            "type": "string",
-            "title": "点位配置",
-            "description": "格式: \"位号,描述,下限,上限\"。例如: HCY_709B101_PV,氨合成B新鲜期流量,0,10000"
+        "type": "template_list",
+        "description": "监控点位列表（模板化编辑）。每个点位包含：位号(name)、描述(description)、低阈值(low_threshold)、高阈值(high_threshold)、检查间隔(check_interval)、启用(enabled)。低/高阈值填 0 或留空则不预警。",
+        "hint": "在 WebUI 中以模板条目形式添加/删除多个点位，列表中直接显示位号便于区分。",
+        "templates": {
+            "point": {
+                "name": "DCS 监控点位",
+                "hint": "添加一个 DCS 监控点位",
+                "display_item": "name",
+                "items": {
+                    "name": {
+                        "type": "string",
+                        "description": "点位位号，拼接 point_prefix 后为完整点 ID",
+                        "hint": "例如 HCY_FICOMP_710B101_PV",
+                        "default": ""
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "点位的中文描述，用于预警消息展示",
+                        "hint": "例如 氨合成B新鲜期流量",
+                        "default": ""
+                    },
+                    "low_threshold": {
+                        "type": "float",
+                        "description": "低于此值触发低阈值预警，填 0 或留空则不预警",
+                        "hint": "可选；例如 50.0"
+                    },
+                    "high_threshold": {
+                        "type": "float",
+                        "description": "高于此值触发高阈值预警，填 0 或留空则不预警",
+                        "hint": "可选；例如 100.0"
+                    },
+                    "check_interval": {
+                        "type": "int",
+                        "description": "该点位的检查间隔（秒），留空使用全局默认值",
+                        "hint": "可选；例如 10"
+                    },
+                    "enabled": {
+                        "type": "bool",
+                        "description": "是否启用该点位监控",
+                        "default": true
+                    }
+                }
+            }
         }
     }
 }

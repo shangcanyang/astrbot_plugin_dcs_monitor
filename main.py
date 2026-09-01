@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import json
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Optional, Tuple, Union, List, Dict, Any
 
 import aiohttp
@@ -17,82 +15,32 @@ from astrbot.api import logger
     "astrbot_plugin_dcs_monitor",
     "YourName",
     "DCS 多点位监控（简单模式：位号+描述+上下限）",
-    "2.2.0",
+    "2.4.0",
     "https://github.com/yourname/astrbot_plugin_dcs_monitor",
 )
 class DCSMonitor(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
-        # config 是 AstrBot 插件管理器传入的插件专属配置 (AstrBotConfig 对象)
         if config is None:
-            logger.warning("插件配置为空，尝试通过 context.get_config() 获取")
-            raw_config = self.context.get_config()
-        else:
-            raw_config = config
-        if not isinstance(raw_config, dict):
-            logger.error(f"配置格式错误，预期 dict，实际为 {type(raw_config)}")
-            raw_config = {}
+            config = self.context.get_config()
+        if not isinstance(config, dict):
+            logger.error(f"配置格式错误，预期 dict，实际为 {type(config)}")
+            config = {}
+        self.config = config
 
-        self.api_base = raw_config.get("api_base", "http://119.36.147.45:8041")
-        # 凭据读取优先级：本地凭据文件(dcs_credentials.json) > WebUI 配置(默认已为空) > 空字符串
-        local_creds = self._load_local_credentials()
-        self.username = raw_config.get("username") or local_creds.get("username", "")
-        self.password = raw_config.get("password") or local_creds.get("password", "")
-        self.client_id = raw_config.get("client_id") or local_creds.get("client_id", "ms-content-sample")
-        self.global_prefix = raw_config.get("point_prefix", "system:LinkObject:serverdata1:system:")
-        self.default_check_interval = raw_config.get("default_check_interval", 10)
+        # ---- 分组配置（官方 _conf_schema.json 区块化结构） ----
+        conn = config.get("connection", {})
+        cred = config.get("credentials", {})
+        mon = config.get("monitoring", {})
+        self.api_base = conn.get("api_base", "http://119.36.147.45:8041")
+        self.client_id = conn.get("client_id", "ms-content-sample")
+        self.username = cred.get("username", "")
+        self.password = cred.get("password", "")
+        self.global_prefix = mon.get("point_prefix", "system:LinkObject:serverdata1:system:")
+        self.default_check_interval = mon.get("default_check_interval", 10)
 
-        # 解析点位列表 —— 支持简单格式和对象格式
-        self.points: List[Dict[str, Any]] = []
-        points_config = raw_config.get("points", [])
-        for pt in points_config:
-            if isinstance(pt, str):
-                # 简单 CSV 格式: "位号,描述,下限,上限"
-                parts = [p.strip() for p in pt.split(",")]
-                if len(parts) < 1:
-                    logger.warning(f"忽略无效点位配置: {pt!r}")
-                    continue
-                name = parts[0]
-                desc = parts[1] if len(parts) >= 2 else name
-                low = float(parts[2]) if len(parts) >= 3 and parts[2] else None
-                high = float(parts[3]) if len(parts) >= 4 and parts[3] else None
-                pt_obj = {
-                    "name": name,
-                    "description": desc,
-                    "low_threshold": low,
-                    "high_threshold": high,
-                }
-            elif isinstance(pt, dict):
-                # 对象格式
-                if not pt.get("name"):
-                    logger.warning(f"忽略缺少 name 的点位: {pt}")
-                    continue
-                if not pt.get("enabled", True):
-                    continue
-                pt_obj = {
-                    "name": pt["name"],
-                    "description": pt.get("description", pt["name"]),
-                    "low_threshold": pt.get("low_threshold"),
-                    "high_threshold": pt.get("high_threshold"),
-                    "check_interval": pt.get("check_interval", self.default_check_interval),
-                }
-            else:
-                logger.warning(f"忽略无法识别的点位类型: {type(pt)}")
-                continue
-
-            # 统一构建完整 point_info
-            point_id = self.global_prefix + pt_obj["name"]
-            point_info = {
-                "name": pt_obj["name"],
-                "description": pt_obj.get("description", pt_obj["name"]),
-                "point_id": point_id,
-                "low_threshold": pt_obj.get("low_threshold"),
-                "high_threshold": pt_obj.get("high_threshold"),
-                "check_interval": self.default_check_interval,
-                "last_alert_state": "normal",
-            }
-            self.points.append(point_info)
-
+        # ---- 点位列表（template_list） ----
+        self.points = self._parse_points(config.get("points", []), self.global_prefix, self.default_check_interval)
         if not self.points:
             logger.warning("未配置任何启用的监控点位，插件将不会进行监控。")
 
@@ -102,39 +50,56 @@ class DCSMonitor(Star):
         self.running = False
         self.alert_targets: set = set()
 
-    # ------------------- 本地凭据存储 -------------------
-    @property
-    def credentials_path(self) -> Path:
-        """本地凭据文件路径（与插件同目录，已被 .gitignore 忽略，不入库）"""
-        return Path(__file__).resolve().parent / "dcs_credentials.json"
-
-    def _load_local_credentials(self) -> Dict[str, str]:
-        """读取本地凭据文件，失败或不存在时返回空 dict"""
+    # ------------------- 点位解析 -------------------
+    @staticmethod
+    def _to_threshold(value) -> Optional[float]:
+        """template_list 的 float 字段留空时默认保存为 0.0，统一转为 None（不预警）。"""
+        if not value:
+            return None
         try:
-            if self.credentials_path.exists():
-                data = json.loads(self.credentials_path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    return {k: str(v) for k, v in data.items()}
-        except Exception as e:
-            logger.error(f"读取本地凭据文件失败: {e}")
-        return {}
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        return v if v != 0 else None
 
-    def _save_local_credentials(self, updates: Dict[str, str]) -> bool:
-        """合并更新本地凭据文件，返回是否成功"""
+    @classmethod
+    def _parse_points(cls, points_config: List[Any], prefix: str, default_interval: int) -> List[Dict[str, Any]]:
+        """解析 template_list 点位（每条带 __template_key 字段，解析时忽略之）。"""
+        points = []
+        for pt in points_config:
+            if not isinstance(pt, dict) or not pt.get("name") or not pt.get("enabled", True):
+                logger.warning(f"忽略无效点位配置: {pt}")
+                continue
+            points.append({
+                "name": pt["name"],
+                "description": pt.get("description", pt["name"]),
+                "point_id": prefix + pt["name"],
+                "low_threshold": cls._to_threshold(pt.get("low_threshold")),
+                "high_threshold": cls._to_threshold(pt.get("high_threshold")),
+                "check_interval": pt.get("check_interval") or default_interval,
+                "last_alert_state": "normal",
+            })
+        return points
+
+    # ------------------- 凭据存储（data/config 目录） -------------------
+    def _save_credentials(self, updates: Dict[str, str]) -> bool:
+        """合并更新凭据并通过 AstrBotConfig.save_config() 持久化到 data/config。"""
         try:
-            merged = self._load_local_credentials()
+            creds = dict(self.config.get("credentials") or {})
             for k, v in updates.items():
                 if v is None:
-                    merged.pop(k, None)
+                    creds.pop(k, None)
                 else:
-                    merged[k] = str(v)
-            self.credentials_path.write_text(
-                json.dumps(merged, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+                    creds[k] = str(v)
+            self.config["credentials"] = creds
+            save = getattr(self.config, "save_config", None)
+            if callable(save):
+                save()
+            else:
+                logger.warning("当前配置对象不支持 save_config()，凭据仅保存在内存中")
             return True
         except Exception as e:
-            logger.error(f"保存本地凭据失败: {e}")
+            logger.error(f"保存凭据失败: {e}")
             return False
 
     async def terminate(self):
@@ -172,9 +137,8 @@ class DCSMonitor(Star):
                     if ticket:
                         logger.info(f"登录成功，ticket: {ticket[:10]}...")
                         return ticket
-                    else:
-                        logger.error(f"登录响应无 ticket: {data}")
-                        return None
+                    logger.error(f"登录响应无 ticket: {data}")
+                    return None
         except Exception as e:
             logger.error(f"登录失败: {e}")
             return None
@@ -188,7 +152,6 @@ class DCSMonitor(Star):
         now = datetime.now(timezone.utc)
         max_date = now.isoformat(timespec='seconds').replace('+00:00', 'Z')
         min_date = (now - timedelta(seconds=30)).isoformat(timespec='seconds').replace('+00:00', 'Z')
-
         payload = {
             "list": [{
                 "dataSource": point_id,
@@ -214,9 +177,7 @@ class DCSMonitor(Star):
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.api_base}/api/compose/manage/v3/objectselector/objectdata/batchQuery",
-                    headers=headers,
-                    json=payload,
-                    timeout=10
+                    headers=headers, json=payload, timeout=10
                 ) as resp:
                     if resp.status == 401:
                         return "TOKEN_EXPIRED"
@@ -229,11 +190,9 @@ class DCSMonitor(Star):
                     point_data = data.get(point_id)
                     if point_data and point_data.get("list"):
                         last = point_data["list"][-1]
-                        value = float(last["first"])
-                        return (self._utc_to_beijing(last["time"]), value)
-                    else:
-                        logger.warning(f"点位 {point_id} 响应中无数据: {data}")
-                        return None
+                        return (self._utc_to_beijing(last["time"]), float(last["first"]))
+                    logger.warning(f"点位 {point_id} 响应中无数据: {data}")
+                    return None
         except Exception as e:
             logger.error(f"请求异常 点位 {point_id}: {e}")
             return None
@@ -256,18 +215,15 @@ class DCSMonitor(Star):
         state = point["last_alert_state"]
         if low is not None and value < low:
             if state != "low":
-                msg = f"⚠️ DCS 低阈值预警 [{now_str}]\n点位: {display_name}\n当前值: {value}\n低于阈值: {low}"
-                await self.send_alert(msg)
+                await self.send_alert(f"⚠️ DCS 低阈值预警 [{now_str}]\n点位: {display_name}\n当前值: {value}\n低于阈值: {low}")
                 point["last_alert_state"] = "low"
         elif high is not None and value > high:
             if state != "high":
-                msg = f"⚠️ DCS 高阈值预警 [{now_str}]\n点位: {display_name}\n当前值: {value}\n高于阈值: {high}"
-                await self.send_alert(msg)
+                await self.send_alert(f"⚠️ DCS 高阈值预警 [{now_str}]\n点位: {display_name}\n当前值: {value}\n高于阈值: {high}")
                 point["last_alert_state"] = "high"
         else:
             if state != "normal" and (low is not None or high is not None):
-                msg = f"✅ DCS 状态恢复正常 [{now_str}]\n点位: {display_name}\n当前值: {value}"
-                await self.send_alert(msg)
+                await self.send_alert(f"✅ DCS 状态恢复正常 [{now_str}]\n点位: {display_name}\n当前值: {value}")
                 point["last_alert_state"] = "normal"
 
     async def monitoring_loop(self):
@@ -372,8 +328,7 @@ class DCSMonitor(Star):
 
     @filter.command("dcs_set")
     async def set_credential(self, event: AstrMessageEvent):
-        """设置/查看本地凭据（保存到插件目录下的 dcs_credentials.json）"""
-        # 仅允许管理员操作（若平台 API 不支持管理员判断则放行）
+        """设置/查看凭据（保存到 AstrBot data/config 目录）"""
         try:
             if not event.is_admin():
                 yield event.plain_result("❌ 仅管理员可设置 DCS 凭据")
@@ -382,14 +337,9 @@ class DCSMonitor(Star):
             pass
 
         raw = event.message_str.strip()
-        # 去掉开头的指令名（兼容 "/dcs_set xxx" 与 "/dcs_set,xxx" 等分隔形式）
-        if " " in raw:
-            rest = raw.split(None, 1)[1].strip()
-        else:
-            rest = ""
+        rest = raw.split(None, 1)[1].strip() if " " in raw else ""
         if not rest:
-            # 无参数：查看当前凭据状态（不回显密码明文）
-            msg = "DCS 凭据状态（本地文件 dcs_credentials.json）:\n"
+            msg = "DCS 凭据状态（保存于 AstrBot data/config 目录）:\n"
             msg += f"username: {'已设置' if self.username else '未设置'}\n"
             msg += f"client_id: {self.client_id or '未设置(默认 ms-content-sample)'}\n"
             msg += f"password: {'已设置' if self.password else '未设置'}\n"
@@ -398,7 +348,7 @@ class DCSMonitor(Star):
             msg += "/dcs_set password <密码>\n"
             msg += "/dcs_set client_id <客户端ID>\n"
             msg += "/dcs_set remove <username|password|client_id>   # 清除某项\n"
-            msg += "\n提示：凭据仅保存在本机插件目录，不会写入 WebUI 配置或提交到 Git。"
+            msg += "\n提示：凭据保存于 AstrBot data/config 目录，更新/重装插件不丢失；不提交到 Git。"
             yield event.plain_result(msg)
             return
 
@@ -411,27 +361,24 @@ class DCSMonitor(Star):
             if key not in ("username", "password", "client_id"):
                 yield event.plain_result("❌ 仅支持清除 username / password / client_id")
                 return
-            if not self._save_local_credentials({key: None}):
+            if not self._save_credentials({key: None}):
                 yield event.plain_result("❌ 清除凭据失败，请查看日志")
                 return
             setattr(self, key, "" if key != "client_id" else "ms-content-sample")
-            yield event.plain_result(f"✅ 已清除本地凭据: {key}")
+            yield event.plain_result(f"✅ 已清除凭据: {key}")
             return
 
-        if sub not in ("username", "password", "client_id"):
-            yield event.plain_result("❌ 仅支持设置 username / password / client_id")
-            return
-        if not value:
+        if sub not in ("username", "password", "client_id") or not value:
             yield event.plain_result(f"❌ 用法: /dcs_set {sub} <值>")
             return
-        if not self._save_local_credentials({sub: value}):
+        if not self._save_credentials({sub: value}):
             yield event.plain_result("❌ 保存凭据失败，请查看日志")
             return
         setattr(self, sub, value)
         if sub == "password":
-            yield event.plain_result("✅ 已设置 DCS 密码并保存到本地凭据文件")
+            yield event.plain_result("✅ 已设置 DCS 密码并保存到 AstrBot data/config 目录")
         else:
-            yield event.plain_result(f"✅ 已设置 {sub} 并保存到本地凭据文件")
+            yield event.plain_result(f"✅ 已设置 {sub} 并保存到 AstrBot data/config 目录")
 
     @filter.command("dcs_now")
     async def query_now(self, event: AstrMessageEvent):
@@ -454,7 +401,5 @@ class DCSMonitor(Star):
                 results.append(f"❌ {display}: 获取数据失败")
             else:
                 bj_time, value = result
-                # value is already float from fetch_latest
                 results.append(f"✅ {display}: {value} @ {bj_time}")
-        msg = "📊 当前点位值:\n" + "\n".join(results)
-        yield event.plain_result(msg)
+        yield event.plain_result("📊 当前点位值:\n" + "\n".join(results))

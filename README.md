@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 00744ee2872ebb6688a71f082191730f_804f9d19a62b11f199d2525400287e28
+    ReservedCode1: yge0r7sQw4RCE5uTImSoH3M/vGBuNouAnOlVnsN/kpMo49+SAeK1AkfEucoym4WDWwpb20g/z/6HRIpGUTdbp3vc1ejJio/z01FqKUVCEgx8abAbqPOTP9vZ+YF9y4nAzX271rHrUXf/Ja3xeG6ClgL46z5OBqy5I7E6vSDv5TIy7AttIKKWG3db8Dk=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 00744ee2872ebb6688a71f082191730f_804f9d19a62b11f199d2525400287e28
+    ReservedCode2: yge0r7sQw4RCE5uTImSoH3M/vGBuNouAnOlVnsN/kpMo49+SAeK1AkfEucoym4WDWwpb20g/z/6HRIpGUTdbp3vc1ejJio/z01FqKUVCEgx8abAbqPOTP9vZ+YF9y4nAzX271rHrUXf/Ja3xeG6ClgL46z5OBqy5I7E6vSDv5TIy7AttIKKWG3db8Dk=
+---
+
 # AstrBot DCS 监控与预警插件
 
 本插件用于在 AstrBot 中监控工业 DCS（分布式控制系统）的实时数据点位，支持阈值预警、多会话绑定、自动登录与 token 刷新，可方便地将预警消息推送到 QQ、微信等聊天平台。
@@ -27,27 +38,56 @@
    pip install -r requirements.txt
    ```
 
-## ⚙️ 配置
+## ⚙️ 配置（WebUI 网页版表单）
 
-在 AstrBot WebUI 的插件管理页面，找到 `astrbot_plugin_dcs_monitor`，填写以下配置项：
+在 AstrBot WebUI 的插件管理页面，找到 `astrbot_plugin_dcs_monitor`，插件配置页会展示**区块化分组表单**，所有需修改的参数均可直接填写后保存，无需编辑任何文件。
+
+配置界面分为以下区块（参考 E:\monitor 配置弹窗的区块化布局）：
+
+### 1. 连接设置（connection）
 
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
 | `api_base` | DCS API 基础地址 | `http://119.36.147.45:8041` |
-| `username` | 登录用户名（建议留空，用 `/dcs_set` 设置） | 留空 |
-| `password` | 登录密码（建议留空，用 `/dcs_set` 设置） | 留空 |
-| `client_id` | 客户端 ID | `ms-content-sample` |
-| `point_prefix` | 点 ID 前缀 | `system:LinkObject:serverdata1:system:` |
-| `point_name` | 监控点名称 | `HCY_FICOMP_710B101_PV` |
-| `check_interval` | 检查间隔（秒） | `10` |
-| `low_threshold` | 低阈值（可选，低于此值预警） | `0.0` |
-| `high_threshold` | 高阈值（可选，高于此值预警） | `100.0` |
+| `client_id` | 客户端 ID（可选，默认 `ms-content-sample`） | `ms-content-sample` |
 
-> 注意：`point_name` 和 `point_prefix` 拼接后必须为 DCS 系统中真实存在的点 ID。
+### 2. 登录凭据（credentials）
 
-### 🔐 凭据安全说明（v2.2.0+）
+| 配置项 | 说明 |
+|--------|------|
+| `username` | 登录用户名 |
+| `password` | 登录密码，**掩码输入（secret）**，不提供默认值 |
 
-`username` / `password` 不再提供明文默认值，避免凭据随仓库/WebUI 泄露。请使用聊天指令将凭据写入**本地凭据文件**（插件目录下 `dcs_credentials.json`，已被 `.gitignore` 忽略，不会提交到 Git）：
+### 3. 监控设置（monitoring）
+
+| 配置项 | 说明 | 示例 |
+|--------|------|------|
+| `point_prefix` | 自动拼接到每个点位名称前面的固定前缀 | `system:LinkObject:serverdata1:system:` |
+| `default_check_interval` | 全局默认检查间隔（秒） | `10` |
+
+### 4. 监控点位列表（points，template_list 模板化编辑）
+
+可视化模板列表编辑（官方 `template_list` 类型），可添加/删除多个"监控点位"模板条目，折叠列表中直接显示位号便于区分。每个点位包含：
+
+| 字段 | 说明 | 是否必填 |
+|------|------|---------|
+| `name` | 位号，拼接 `point_prefix` 后为完整点 ID | 必填 |
+| `description` | 点位中文描述，用于预警消息展示 | 选填（缺省用位号） |
+| `low_threshold` | 低阈值，低于此值触发预警；**填 0 或留空不预警** | 选填 |
+| `high_threshold` | 高阈值，高于此值触发预警；**填 0 或留空不预警** | 选填 |
+| `check_interval` | 该点位独立检查间隔（秒），留空使用全局默认值 | 选填 |
+| `enabled` | 是否启用该点位 | 选填（默认启用） |
+
+保存后的配置结构中每个条目会带 `__template_key` 字段标识模板，插件加载时自动忽略该字段。
+
+> 注意：`point_prefix` 与点位 `name` 拼接后必须为 DCS 系统中真实存在的点 ID。
+
+### 🔐 凭据安全说明（v2.3.0+）
+
+`username` / `password` 不提供明文默认值。凭据通过两种方式配置，**统一持久化到 AstrBot `data/config/<plugin>_config.json`**（官方规范：持久化数据存 data 目录，更新/重装插件不丢失）：
+
+1. **网页版配置（推荐主渠道）**：在「登录凭据」区块直接填写 `username` / `password`（密码为掩码输入），保存后写入 AstrBot 配置。
+2. **聊天指令（兜底渠道）**：使用 `/dcs_set` 指令，同样写入同一份配置并即时保存：
 
 ```
 /dcs_set username <用户名>          # 设置登录用户名
@@ -56,8 +96,6 @@
 /dcs_set                            # 查看凭据状态（不显示密码明文）
 /dcs_set remove <username|password|client_id>   # 清除某项
 ```
-
-凭据读取优先级：本地凭据文件 > WebUI 配置 > 空字符串。已通过 `/dcs_set` 设置后，无需在 WebUI 重复填写。
 
 ## 🤖 使用指令
 
@@ -95,3 +133,4 @@ MIT License
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request。
+*（内容由AI生成，仅供参考）*

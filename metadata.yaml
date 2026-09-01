@@ -1,6 +1,6 @@
 name: astrbot_plugin_dcs_monitor
 display_name: dcs_monitor
 desc: DCS 监控（简单模式）
-version: v2.2.0
+version: v2.3.0
 author: canyang
 repo: https://github.com/shangcanyang/astrbot_plugin_dcs_monitor
