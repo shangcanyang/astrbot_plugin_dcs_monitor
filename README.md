@@ -105,6 +105,8 @@ AIGC:
 4. 修改保存后自动写入配置并持久化到 `data/config`；若监控正在运行，会自动重启监控任务使新点位立即生效。
 
 > 说明：页面修改与 WebUI「配置 → points 区块」共用同一份配置，两者任一保存都会同步覆盖。新增或删除 Page 目录后需重载插件，静态资源修改刷新页面即可。
+>
+> 兼容性说明：AstrBot Dashboard 在电脑端以受限 iframe（sandbox 仅 `allow-scripts allow-forms allow-downloads`，无 `allow-same-origin`）加载插件页面，外部 CSS/JS 会被浏览器按跨源拦截。因此 `pages/points/index.html` 已将 `style.css` 与 `app.js` 内联；后续修改样式/逻辑时，改完 `style.css` / `app.js` 需重新内联到 `index.html`（保留这两个源文件便于维护与 diff）。
 
 ## 凭据存储与安全
 
